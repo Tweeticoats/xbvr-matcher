@@ -8,12 +8,15 @@ import time
 scenes={}
 scene_url={}
 
+request_s = requests.Session()
+request_t = requests.Session()
+
 def getScenes(url):
     request_config = {"dlState": "any", "cardSize": "1", "lists": [], "isAvailable": None, "isAccessible": None,
                       "isWatched": None, "releaseMonth": "", "cast": [], "sites": [], "tags": [], "cuepoint": [],
                       "volume": 0, "sort": "release_desc", "offset": 0, "limit": 1}
 
-    response = requests.post(url+'/api/scene/list', json=request_config)
+    response = request_s.post(url+'/api/scene/list', json=request_config)
     if response.status_code == 200:
 #        print(response.json()[)
         result = response.json()
@@ -31,7 +34,7 @@ def getScenes(url):
 def filesList():
     request_config={"sort":"created_time_desc","state":"unmatched","createdDate":[],"resolutions":[],"framerates":[],"bitrates":[],"filename":""}
 
-    response=requests.post(url+'/api/files/list',json=request_config)
+    response=request_s.post(url+'/api/files/list',json=request_config)
     if response.status_code==200:
 #        print(response.json())
         return response.json()
@@ -78,32 +81,53 @@ def process(api_key,stashbox_endpoint):
             ohash = f['oshash']
             if len(ohash)< 16:
                 ohash='0000000000000000'[len(ohash) - 16:] + ohash
-            response = requests.post(stashbox_endpoint, json={'query':query,'variables':{"input":{"hash":ohash,"algorithm":"OSHASH"}}}, headers=headers)
-            if response.status_code==200:
-                res=response.json()['data']
+#            stashdb_match(ohash,f)
+            tt_match(ohash,f)
 
-                matched_scenes = []
-                for s in res['findSceneByFingerprint']:
-                    print(str(s))
+def stashdb_match(ohash,f):
+    response = request_t.post(stashbox_endpoint, json={'query':query,'variables':{"input":{"hash":ohash,"algorithm":"OSHASH"}}}, headers=headers)
+    if response.status_code==200:
+        res=response.json()['data']
 
-                    for u in s['urls']:
-                        if scene_url.get(u['url']):
-                            sc=scene_url[u['url']]
-                            if sc['id'] not in [x['id'] for x in matched_scenes]:
-                                matched_scenes.append(sc)
-                            print('file: '+str(f))
-                            print('scene: '+str(s))
-                    for sc in scene_url.values():
-                        if sc['site'].lower()==s['studio']['name']:
-                            if sc['title']==s['title']:
-                                if sc['id'] not in [x['id'] for x in matched_scenes]:
-                                    print(sc)
-                                    matched_scenes.append(sc)
-                if len(matched_scenes)> 0:
-                    matches.append({"file":f,"matches":matched_scenes})
-                if len(matched_scenes)==1:
-                    print('Updating scene: '+str(f['id'])+' '+matched_scenes[0]['scene_id'])
-                    match(f['id'],matched_scenes[0]['scene_id'])
+        matched_scenes = []
+        for s in res['findSceneByFingerprint']:
+            print(str(s))
+
+            for u in s['urls']:
+                if scene_url.get(u['url']):
+                    sc=scene_url[u['url']]
+                    if sc['id'] not in [x['id'] for x in matched_scenes]:
+                        matched_scenes.append(sc)
+                    print('file: '+str(f))
+                    print('scene: '+str(s))
+            for sc in scene_url.values():
+                if sc['site'].lower()==s['studio']['name']:
+                    if sc['title']==s['title']:
+                        if sc['id'] not in [x['id'] for x in matched_scenes]:
+                            print(sc)
+                            matched_scenes.append(sc)
+        if len(matched_scenes)> 0:
+            matches.append({"file":f,"matches":matched_scenes})
+        if len(matched_scenes)==1:
+            print('Updating scene: '+str(f['id'])+' '+matched_scenes[0]['scene_id'])
+            match(f['id'],matched_scenes[0]['scene_id'])
+
+
+def tt_match(ohash,f):
+    try:
+        response=request_t.post('https://timestamp.trade/hash_lookup?ohash='+ohash)
+        if response.status_code==200:
+            for r in response.json():
+                for xid in r['xbvr-id']:
+                    if xid in scenes:
+                        match(f,xid)
+    except requests.exceptions.RequestException as err:
+        print(err)
+        time.sleep(15)
+        return
+
+
+
 
 
 
